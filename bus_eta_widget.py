@@ -1,49 +1,26 @@
 #!python3
 
-import os
-import time
-from textwrap import dedent
 from contextlib import contextmanager
 
 # noinspection PyUnresolvedReferences
-import appex  # Pythonista module
+import appex  # Pythonista internal module
+import geopy.distance
 # noinspection PyUnresolvedReferences
-import location  # Pythonista module
+import location  # Pythonista internal module
 # noinspection PyUnresolvedReferences
-import ui  # Pythonista module
-
-from bus_notify.bus_eta_notifier import BusEtaNotifier
+import ui  # Pythonista internal module
 
 # TODO: This should be changed to "config" when all is ready
-from .my_config import (
-    BUS_LINE_NUMBERS, DATA_REFRESH_INTERVAL, HOME_BUS_STOP_ID, HOME_COORDINATES, WORK_BUS_STOP_ID, WORK_COORDINATES,
-    ETA_MESSAGE, NO_ETA_MESSAGE, NOTHING_TO_DO_MESSAGE)
-
-# URLs
-BASE_URL = 'http://curlbus.app/'
-URL_TO_HOME = os.path.join(BASE_URL, WORK_BUS_STOP_ID)
-URL_TO_WORK = os.path.join(BASE_URL, HOME_BUS_STOP_ID)
-
-
-def get_location_city(coordinates):
-    """
-    FOO
-    :param coordinates:
-    :return:
-    """
-    # noinspection PyBroadException
-    try:
-        return location.reverse_geocode(coordinates)[0]['SubLocality']
-    except Exception:
-        return
+from bus_eta_pythonista_widget.my_config import DATA_REFRESH_INTERVAL, NO_ETA_MESSAGE, STATIONS_DATA
+from bus_notify.bus_eta_notifier import BusEtaNotifier
 
 
 def get_current_location():
     """
-    FOO
-    :return:
+    Retrieves the current location latitude and longitude from the iOS
+    :return: latitude and longitude
+    :rtype: tuple[float, float]
     """
-
     @contextmanager
     def location_updates():
         # Start getting location data from iOS
@@ -58,46 +35,66 @@ def get_current_location():
         if curr_loc is None:
             return
 
-        return get_location_city(dict(latitude=curr_loc['latitude'], longitude=curr_loc['longitude']))
-
-
-@contextmanager
-def widget_label():
-    # Create a label which will be presented as text box in the NC widget
-    label = ui.Label(font=('Menlo', 15), alignment=ui.ALIGN_CENTER)
-    label.number_of_lines = 0  # Make widget adjust the size to the number of lines
-    yield label
+        return curr_loc['latitude'], curr_loc['longitude']
 
 
 class MyEtaNotifier(BusEtaNotifier):
 
     def __init__(self):
-        super(BusEtaNotifier, self).__init__()
+        super(MyEtaNotifier, self).__init__()
 
-    def get_service_query_obj(self):
-        # FOO how do I understand what ORIGIN is???
-        return dict(station_id=ORIGIN, line_numbers=BUS_LINE_NUMBERS)
+    def get_query_params_obj(self):
+        curr_coords = get_current_location()
+        if curr_coords is None:
+            print('Cannot get current location')
+
+        # Get the station id of the closest station i.e. minimal distance between the current location and stations
+        # in "STATIONS_DATA"
+        closest_station_id = min(
+            STATIONS_DATA,
+            # Calculate the distance in meters between the current location and stations in "STATIONS_DATA"
+            key=lambda station_id: geopy.distance.distance(curr_coords, STATIONS_DATA[station_id]['coordinates']).m)
+
+        line_numbers = STATIONS_DATA[closest_station_id]['line_numbers']
+        return dict(station_id=int(closest_station_id), line_numbers=line_numbers)
+
+    def _make_eta_msg(self):
+        msgs = []
+        station_name = self.etas['station_name']
+        station_city = self.etas['station_city']
+
+        line_number_2_etas = self.etas['line_number_2_etas']
+        for line_number, etas in sorted(line_number_2_etas.items(), key=lambda item: item[0]):
+            etas_str = ', '.join([str(eta) for eta in line_number_2_etas[line_number]])
+            msg = f'🚌 {line_number}: {etas_str}'
+            msgs.append(msg)
+
+        if not msgs:
+            return f'{NO_ETA_MESSAGE}'
+
+        msgs_str = '\n'.join(msgs)
+        return f'{station_city} - {station_name}\n{msgs_str}'
 
     def send_notification(self):
-        msg = NO_ETA_MESSAGE
-        if self.etas:
-            msg = ETA_MESSAGE.format(
-                current_location=get_current_location(), station_name=self.etas['station_name'], etas_str=self.etas)
+        """
+        Present ETAs in Pythonista's today widget
+        """
 
-        # FOO here we can bink an indicator exactly same internal as service query interval
-        for x in range(self.service_query_interval + 1):
-            # Refresh the widget every 1 second between service queries
-            with widget_label() as label:
-                label.text = dedent(f'Updated {x} sec ago\n{msg}')  # Maximum 7 lines
-                appex.set_widget_view(label)
-            time.sleep(1)
+        # FOO here we can blink an indicator exactly same internal as service query interval
+        msg = self._make_eta_msg()
+
+        # Configure the iOS today widget to present the text in dynamic view i.e. the size of the widget will be
+        # dynamic and can be expanded when text can't feed the default widget size
+        frame_size = (0, 0, 500, 500)  # x, y, width, height
+        v = ui.View(frame=frame_size)
+        label = ui.Label(frame=frame_size, flex='WHTB', alignment=ui.ALIGN_CENTER)
+        label.font = ('Menlo', 15)
+        label.number_of_lines = 0  # 0 means number of line is dynamic
+        label.text = msg
+        v.add_subview(label)
+        appex.set_widget_view(v)
 
 
 if __name__ == '__main__':
-    ORIGIN = None
-    MESSAGE = None
-    HOME_LOCATION_CITY = get_location_city(HOME_COORDINATES)
-    WORK_LOCATION_CITY = get_location_city(WORK_COORDINATES)
-
     my_notifier = MyEtaNotifier()
-    my_notifier.run(service_query_interval=10)
+    my_notifier.run(DATA_REFRESH_INTERVAL)
