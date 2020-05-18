@@ -62,18 +62,20 @@ class MyEtaNotifier(BusEtaNotifier):
         msgs = []
         station_name = self.etas['station_name']
         station_city = self.etas['station_city']
-
+        line1_padding = ' ' * 15
+        line1_str = f'{line1_padding}{station_city} - {station_name}'
+        msg_lines_padding = ' ' * (len(line1_str) // 2)
         line_number_2_etas = self.etas['line_number_2_etas']
         for line_number, etas in sorted(line_number_2_etas.items(), key=lambda item: item[0]):
             etas_str = ', '.join([str(eta) for eta in line_number_2_etas[line_number]])
-            msg = f'🚌 {line_number}: {etas_str}'
+            msg = f'{msg_lines_padding}🚌 {line_number}: {etas_str}'
             msgs.append(msg)
 
         if not msgs:
             return f'{NO_ETA_MESSAGE}'
 
         msgs_str = '\n'.join(msgs)
-        return f'{station_city} - {station_name}\n{msgs_str}'
+        return f'{line1_str}\n{msgs_str}'
 
     def send_notification(self):
         """
@@ -87,7 +89,7 @@ class MyEtaNotifier(BusEtaNotifier):
         # dynamic and can be expanded when text can't feed the default widget size
         frame_size = (0, 0, 500, 500)  # x, y, width, height
         v = ui.View(frame=frame_size)
-        label = ui.Label(frame=frame_size, flex='WHTB', alignment=ui.ALIGN_CENTER)
+        label = ui.Label(frame=frame_size, flex='WHTB', alignment=ui.ALIGN_LEFT)
         label.font = ('Menlo', 15)
         label.number_of_lines = 0  # 0 means number of line is dynamic
         label.text = msg
