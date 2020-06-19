@@ -3,10 +3,11 @@
 # Written by denpy in 2020.
 # https://github.com/denpy
 #
-from contextlib import contextmanager
-from timeit import default_timer
+import logging
 import time
+from contextlib import contextmanager
 from itertools import cycle
+from timeit import default_timer
 
 # noinspection PyUnresolvedReferences
 import appex  # Pythonista internal module
@@ -19,6 +20,10 @@ import ui  # Pythonista internal module
 # TODO: This should be changed to "config" when all is ready
 from bus_eta_pythonista_widget.my_config import DATA_REFRESH_INTERVAL, NO_ETA_MESSAGE, STATIONS_DATA
 from bus_notify.bus_eta_notifier import BusEtaNotifier
+
+# Set level for urllib3 logger so we will not see any messages on widget, otherwise its logs will appear on the widget
+# background
+logging.getLogger("urllib3").setLevel(logging.ERROR)
 
 
 def get_current_location():
@@ -44,10 +49,20 @@ def get_current_location():
         return curr_loc['latitude'], curr_loc['longitude']
 
 
+class DummyLogger(object):
+    """
+    An object which does nothing, we pass it as logger so nothing will be printed to the widget, we don't want log
+    messages in the widget
+    """
+    def __getattr__(self, name):
+        return lambda *x: None
+
+
 class MyEtaNotifier(BusEtaNotifier):
 
     def __init__(self):
-        super(MyEtaNotifier, self).__init__()
+        dl = DummyLogger()
+        super(MyEtaNotifier, self).__init__(dl)
         self.station_id = None
 
     def _get_station_data(self, station_id: int):
@@ -76,29 +91,23 @@ class MyEtaNotifier(BusEtaNotifier):
         station_name = self.etas['station_name']
         station_city = self.etas['station_city']
 
-        # Pad messages with spaces so they will appear aligned in the middle of the widget
-        widget_line_spaces = 45  # This number should work for iPhone
+        # Bus station details
         station_label = STATIONS_DATA[self.station_id].get('label', '🚏')
-        station_details_str = f'{station_city} - {station_name} {station_label} {status_label}'
-        line1_str_len = len(station_details_str)
-        line1_padding = (widget_line_spaces - line1_str_len) // 2 * ' '
-        line1_str_padded = f'{line1_padding}{station_details_str}'
+        station_details_str = f'{station_city} - {station_name} {station_label} {status_label}'.center(42, ' ')
 
-        # Pad lines with bus numbers and ETAs, we try to make line to be aligned in the middle of the widget for
-        # esthetic purposes
-        # This will make line to be in the middle of the widget
-        eta_lines_padding = (line1_str_len // 2 + (len(line1_padding) - 5)) * ' '
+        # ETAs text
         line_number_2_etas = self.etas['line_number_2_etas']
         for line_number, etas in sorted(line_number_2_etas.items(), key=lambda item: item[0]):  # sort by line number
-            etas_str = ', '.join([str(eta) for eta in line_number_2_etas[line_number]])
-            msg = f'{eta_lines_padding}🚌 {line_number}: {etas_str}'
+            etas_str = ', '.join([str(eta) if eta > 0 else 'Now' for eta in line_number_2_etas[line_number]])
+            msg = f'🚌 {line_number}: {etas_str}'
+            msg = f'{msg: <25}'.center(60, ' ')
             msgs.append(msg)
 
         if not msgs:
-            return f'{NO_ETA_MESSAGE}'
+            msgs = [f'{NO_ETA_MESSAGE: <25}'.center(60, ' ')]
 
         msgs_str = '\n'.join(msgs)
-        return f'{line1_str_padded}\n{msgs_str}'
+        return f'{station_details_str}\n{msgs_str}'
 
     def send_notification(self):
         """
@@ -113,19 +122,22 @@ class MyEtaNotifier(BusEtaNotifier):
         label.number_of_lines = 0  # 0 means number of line is dynamic
 
         # We keep refresh the widget every one second to show that script is not stuck and running, since we refresh
-        # every one second the number of refreshes will as a number of seconds we need to wait between Curlbus queries
-        secs_until_widget_refresh = DATA_REFRESH_INTERVAL - self.get_station_data_elapsed
+        # every one second the number of refreshes will as a number of seconds we need to wait between Curlbus
+        # data requests
+        widget_refresh_count = DATA_REFRESH_INTERVAL - self.get_station_data_elapsed
         for status_label in cycle(('⬆️', '⬇️')):
-            secs_until_widget_refresh -= 1
-            should_refresh = secs_until_widget_refresh == 0
-            if should_refresh is True:
+            widget_refresh_count -= 1
+            should_request_etas = widget_refresh_count == 0
+            if should_request_etas is True:
                 status_label = '🔄'
             msg = self._make_eta_msg(status_label)
             label.text = msg
             v.add_subview(label)
             appex.set_widget_view(v)
-            if should_refresh is True:
-                break
+
+            # Check if we need to exit the loop for requesting new data from Curlbus
+            if should_request_etas is True:
+                return
             time.sleep(1)
 
 
