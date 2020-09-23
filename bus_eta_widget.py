@@ -127,7 +127,7 @@ class MyArrivalsNotifier(BusArrivalsNotifier):
         label.number_of_lines = 0  # 0 means number of line is dynamic
 
         # We keep refresh the widget every one second to show that script is not stuck and running, since we refresh
-        # every one second the number of refreshes will as a number of seconds we need to wait between Curlbus
+        # every one second the number of refreshes will be as a number of seconds we need to wait between Curlbus
         # data requests
         widget_refresh_count = DATA_REFRESH_INTERVAL - self.get_station_data_elapsed
         for status_label in cycle(STATUS_LABELS):

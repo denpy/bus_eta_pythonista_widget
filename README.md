@@ -5,8 +5,8 @@ current location.
 It may be useful if you used to get to work and back home on a bus, so when you at home the widget will present an
 information for station you take bus from to work and opposite when you a work.
    
-##### TO DO: Add screenshots here
-##### TO DO: Make installation script?
+##### Widget example:
+![](screenshots/IMG_4516.jpg)
 
 This will only work with [Pythonista 3](http://omz-software.com/pythonista/).
 
@@ -52,3 +52,5 @@ NO_ETA_MESSAGE = '🤷🏾‍♂️'
 
 Note: there is an issue the latest Pythonista 3.3 version which is described [here](https://www.reddit.com/r
 /Pythonista/comments/fcqpl6/today_widget_doesnt_work/) it can prevent you from setting a custom today widget script.
+
+##### TO DO: Make installation script?
